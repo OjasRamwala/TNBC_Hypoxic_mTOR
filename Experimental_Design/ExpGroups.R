@@ -1,0 +1,5 @@
+cancer = rep(c("Benign", "TNBC"), each = 8)
+oxygen = rep(c("Normoxic", "Hypoxic"), times = 8)
+treatment = rep(c("Untreated", "Untreated", "PP242", "PP242"), times = 4)
+expgroup = cbind(cancer, oxygen, treatment)
+row.names(expgroup) = colnames(count_matrix)
