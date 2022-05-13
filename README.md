@@ -11,3 +11,8 @@ The differential gene expression analysis was performed using DESeq to understan
 2.	Cancer + Treatment
 3.	Cancer + Oxygen + Treatment
 
+The dispersion estimates were plotted to understand the dispersion with respect to the mean of the normalized count for each experimental design. The differentially expressed genes were identified for each experimental design, and the normvalues and diffexpvalues were calculated. 
+
+Hierarchical clustering was performed to analyze the tree structure from the data similarity, and the relationship between different sub-clusters was observed. Heatmaps were plotted to analyze and visualize this multi-dimensional data to gain a profound understanding of the high-throughput gene expression data.  
+
+The GO Term Enrichment Analysis is performed to classify gene sets and receive a holistic understanding through the corresponding annotations. The ENSEMBL gene ids were converted to ENTREZ ids using biomaRt. The GO term enrichment analysis was performed using the hyperGTest function.
