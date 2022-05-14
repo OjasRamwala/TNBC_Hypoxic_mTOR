@@ -1,0 +1,469 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+files = list.files(pattern = ".bam.count")
+count_matrix = data.frame(matrix(nrow = 64256))
+
+for (i in files) {
+  file = read.delim(i, row.names=1)
+  count_matrix = cbind(count_matrix, file)
+}
+count_matrix = count_matrix[-c(1)]
+print(dim(count_matrix))
+head(count_matrix)
+```
+```{r}
+cancer = rep(c("Benign", "TNBC"), each = 8)
+oxygen = rep(c("Normoxic", "Hypoxic"), times = 8)
+treatment = rep(c("Untreated", "Untreated", "PP242", "PP242"), times = 4)
+expgroup = cbind(cancer, oxygen, treatment)
+row.names(expgroup) = colnames(count_matrix)
+expgroup
+```
+
+Differentially Expressed Genes for Cancer + Oxygen
+
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+oxygen)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+plotDispEsts(cds)
+cds = DESeq(cds)
+res = results(cds)
+
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange > 1 | log2FoldChange < -1)))
+```
+
+```{r}
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+```
+
+```{r}
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+```
+```{r}
+library(biomaRt)
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=row.names(count_matrix),
+  mart=mart)
+```
+
+```{r}
+library(GOstats)
+library(GO.db)
+library(Category)
+library(org.Hs.eg.db)
+```
+
+
+GO Term Enrichment Analysis
+Upregulated Genes
+
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+oxygen)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+cds = DESeq(cds)
+res = results(cds)
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange > 1)))
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+
+library(biomaRt)
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+diffexp_genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=diffexpgenes,
+  mart=mart)
+
+params = new("GOHyperGParams", 
+             geneIds = diffexp_genes$entrezgene_id, 
+             universeGeneIds = genes$entrezgene_id,
+             annotation = "org.Hs.eg.db",
+             ontology = "BP",
+             pvalueCutoff = 0.001,
+             testDirection = "over")
+
+test = hyperGTest(params)
+print(head(summary(test)))
+```
+
+```{r}
+test_df = data.frame(summary(test))
+save_df = data.frame(test_df$Term, test_df$Pvalue, test_df$Count, test_df$Size)
+write.table(save_df, "CO_U_GOTerms.csv", sep=",")
+```
+
+
+GO Term Enrichment Analysis
+Down-regulated Genes
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+oxygen)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+cds = DESeq(cds)
+res = results(cds)
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange < -1)))
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+
+library(biomaRt)
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+diffexp_genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=diffexpgenes,
+  mart=mart)
+
+params = new("GOHyperGParams", 
+             geneIds = diffexp_genes$entrezgene_id, 
+             universeGeneIds = genes$entrezgene_id,
+             annotation = "org.Hs.eg.db",
+             ontology = "BP",
+             pvalueCutoff = 0.001,
+             testDirection = "over")
+
+test = hyperGTest(params)
+print(head(summary(test)))
+```
+
+```{r}
+test_df = data.frame(summary(test))
+save_df = data.frame(test_df$Term, test_df$Pvalue, test_df$Count, test_df$Size)
+write.table(save_df, "CO_D_GOTerms.csv", sep=",")
+```
+
+Differentially Expressed Genes for Cancer + Treatment
+
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+treatment)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+plotDispEsts(cds)
+cds = DESeq(cds)
+res = results(cds)
+
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange > 1 | log2FoldChange < -1)))
+```
+
+```{r}
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+```
+
+```{r}
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+```
+
+```{r}
+library(biomaRt)
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=row.names(count_matrix),
+  mart=mart)
+```
+
+GO Term Enrichment Analysis
+Upregulated Genes
+
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+treatment)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+cds = DESeq(cds)
+res = results(cds)
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange > 1)))
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+
+library(biomaRt)
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+diffexp_genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=diffexpgenes,
+  mart=mart)
+
+params = new("GOHyperGParams", 
+             geneIds = diffexp_genes$entrezgene_id, 
+             universeGeneIds = genes$entrezgene_id,
+             annotation = "org.Hs.eg.db",
+             ontology = "BP",
+             pvalueCutoff = 0.001,
+             testDirection = "over")
+
+test = hyperGTest(params)
+print(head(summary(test)))
+```
+
+```{r}
+test_df = data.frame(summary(test))
+save_df = data.frame(test_df$Term, test_df$Pvalue, test_df$Count, test_df$Size)
+write.table(save_df, "CT_U_GOTerms.csv", sep=",")
+```
+
+
+GO Term Enrichment Analysis
+Down-regulated Genes
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+treatment)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+cds = DESeq(cds)
+res = results(cds)
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange < -1)))
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+
+library(biomaRt)
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+diffexp_genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=diffexpgenes,
+  mart=mart)
+
+params = new("GOHyperGParams", 
+             geneIds = diffexp_genes$entrezgene_id, 
+             universeGeneIds = genes$entrezgene_id,
+             annotation = "org.Hs.eg.db",
+             ontology = "BP",
+             pvalueCutoff = 0.001,
+             testDirection = "over")
+
+test = hyperGTest(params)
+print(head(summary(test)))
+```
+
+```{r}
+test_df = data.frame(summary(test))
+save_df = data.frame(test_df$Term, test_df$Pvalue, test_df$Count, test_df$Size)
+write.table(save_df, "CT_D_GOTerms.csv", sep=",")
+```
+
+Differentially Expressed Genes for Cancer + Oxygen + Treatment
+
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+oxygen+treatment)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+plotDispEsts(cds)
+cds = DESeq(cds)
+res = results(cds)
+
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange > 1 | log2FoldChange < -1)))
+```
+
+```{r}
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+```
+
+```{r}
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+```
+
+```{r}
+genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=row.names(count_matrix),
+  mart=mart)
+```
+
+GO Term Enrichment Analysis
+Upregulated Genes
+
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+oxygen+treatment)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+cds = DESeq(cds)
+res = results(cds)
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange > 1)))
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+
+diffexp_genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=diffexpgenes,
+  mart=mart)
+
+params = new("GOHyperGParams", 
+             geneIds = diffexp_genes$entrezgene_id, 
+             universeGeneIds = genes$entrezgene_id,
+             annotation = "org.Hs.eg.db",
+             ontology = "BP",
+             pvalueCutoff = 0.001,
+             testDirection = "over")
+
+test = hyperGTest(params)
+print(head(summary(test)))
+```
+
+```{r}
+test_df = data.frame(summary(test))
+save_df = data.frame(test_df$Term, test_df$Pvalue, test_df$Count, test_df$Size)
+write.table(save_df, "COT_U_GOTerms.csv", sep=",")
+```
+
+
+GO Term Enrichment Analysis
+Down-regulated Genes
+```{r}
+library(DESeq2)
+cds = DESeqDataSetFromMatrix(countData = count_matrix,
+                             colData = expgroup,
+                             design = ~cancer+oxygen+treatment)
+
+cds = estimateSizeFactors(cds)
+cds = estimateDispersions(cds)
+cds = DESeq(cds)
+res = results(cds)
+diffexpgenes = rownames(subset(res, padj < 0.05 & (log2FoldChange < -1)))
+normvalues = counts(cds, normalized = T)
+diffexpvalues = data.frame(normvalues[diffexpgenes,])
+clusters = hclust(dist(diffexpvalues))
+groups = cutree(clusters, k = 2)
+print(table(groups))
+
+library(pheatmap)
+pheatmap(diffexpvalues, 
+         cluster_rows = TRUE, 
+         scale = "row", annotation_col = as.data.frame(expgroup),
+         annotation_row = as.data.frame(groups)["groups"])
+
+diffexp_genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=diffexpgenes,
+  mart=mart)
+
+params = new("GOHyperGParams", 
+             geneIds = diffexp_genes$entrezgene_id, 
+             universeGeneIds = genes$entrezgene_id,
+             annotation = "org.Hs.eg.db",
+             ontology = "BP",
+             pvalueCutoff = 0.001,
+             testDirection = "over")
+
+test = hyperGTest(params)
+print(head(summary(test)))
+```
+
+```{r}
+test_df = data.frame(summary(test))
+save_df = data.frame(test_df$Term, test_df$Pvalue, test_df$Count, test_df$Size)
+write.table(save_df, "COT_D_GOTerms.csv", sep=",")
+```
+
+
